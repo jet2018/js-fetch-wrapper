@@ -75,7 +75,7 @@ export default class Jet {
         }
     }
 
-    async post(url, data = {}) {
+    async post(url, body = {}, data = {}) {
         const Data = this.populateData(body, data, 'POST')
         const newUrl = this.setUrl(url)
         try {
@@ -108,6 +108,16 @@ export default class Jet {
 
     async delete(url, body = {}, data = {}) {
         const Data = this.populateData(body, data, 'DELETE')
+        const newUrl = this.setUrl(url)
+        try {
+            return this.flyer(newUrl, Data)
+        } catch (e) {
+            return Promise.reject(e)
+        }
+    }
+
+    async custom(url, type, body = {}, data = {}) {
+        const Data = this.populateData(body, data, type)
         const newUrl = this.setUrl(url)
         try {
             return this.flyer(newUrl, Data)
