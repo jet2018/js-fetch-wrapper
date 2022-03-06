@@ -1,4 +1,6 @@
-class Jet {
+import fetch from 'node-fetch';
+
+export default class Jet {
     constructor(baseUrl = null) {
         this.baseUrl = baseUrl
     }
@@ -114,6 +116,3 @@ class Jet {
         }
     }
 }
-
-
-export { Jet }

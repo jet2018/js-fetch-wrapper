@@ -1,0 +1,30 @@
+{
+    "name": "jet",
+    "version": "1.0.0",
+    "description": "Wrapper for fetch to make clean requests",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/jet2018/js-fetch-wrapper.git"
+    },
+    "keywords": [
+        "axios",
+        "fetch",
+        "js",
+        "node",
+        "modules"
+    ],
+    "author": "jet2018",
+    "license": "ISC",
+    "type": "module",
+    "bugs": {
+        "url": "https://github.com/jet2018/js-fetch-wrapper/issues"
+    },
+    "homepage": "https://github.com/jet2018/js-fetch-wrapper#readme",
+    "dependencies": {
+        "node-fetch": "2.0"
+    }
+}
