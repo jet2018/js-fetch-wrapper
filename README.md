@@ -18,6 +18,17 @@ The plugin is totally customizable and therefore can be simple to play with.
 
 With a good knowledge of the fetch API, you can easily implement your own fashion of the library.
 
+## Installation
+
+With npm, simply run 
+```bash
+npm i jet-fetch
+```
+or with yarn
+```bash 
+yarn add jet-fetch
+```
+
 ## _Defaults_
 
 The library provides various defaults out of the box. All of which can also be overwritten.
@@ -86,12 +97,6 @@ jet
 
 Fork this repo, make your changes, test them and then make a pull request.
 
-## Installation
-
-Simply run 
-```bash
-npm i jet-fetch
-```
 
 ## Known Issues
 The package works well with JS modules. Incase you get any importation issues, save your file as `.mjs` or define in your `package.json` `type` as `module`.
