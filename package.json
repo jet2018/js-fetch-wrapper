@@ -1,7 +1,7 @@
 {
-    "name": "jet-fetcher",
-    "version": "1.0.4",
-    "description": "Wrapper for fetch to make clean requests",
+    "name": "jet-fetch",
+    "version": "1.0.1",
+    "description": "Wrapper for fetch to make clean, faster, precise and fully customizable requests",
     "main": "index.js",
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1"

@@ -1,6 +1,6 @@
-## About Jet library
+## About jet-fetch library
 
-jet-fetcher provides a wrapper class for the [fetch]("https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"). It can be somehow tricky to use fetch API especially for a beginner. However, this library provides a simple way to use fetch API. The package is fully customizable using its `custom` method that enables you customize the whole API
+jet-fetch provides a wrapper class for the [fetch]("https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"). It can be somehow tricky to use fetch API especially for a beginner. However, this library provides a simple way to use fetch API. The package is fully customizable using its `custom` method that enables you customize the whole API
 
 The package ships with the five commonly used http methods but has room for expansion. It covers:-
 
@@ -44,7 +44,7 @@ Whereas on `data`, that's where you can find the `data` object. which represents
 ## _Usage_
 
 ```js
-import Jet from 'jet-fetcher'
+import Jet from 'jet-fetch'
 
 
 let jet = new Jet(baseUrl="" // optional
@@ -90,7 +90,7 @@ Fork this repo, make your changes, test them and then make a pull request.
 
 Simply run 
 ```bash
-npm i jet-fetcher
+npm i jet-fetch
 ```
 
 ## Known Issues
