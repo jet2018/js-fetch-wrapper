@@ -25,6 +25,6 @@
     },
     "homepage": "https://github.com/jet2018/js-fetch-wrapper#readme",
     "dependencies": {
-        "node-fetch": "2.0"
+        "node-fetch": "^2.6.7"
     }
 }
