@@ -1,4 +1,4 @@
-import Jet from "./jet.js";
+import Jet from "./jet.mjs";
 
 const jet = new Jet("https://africantalks.herokuapp.com/api/")
 

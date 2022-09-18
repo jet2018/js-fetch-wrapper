@@ -1,5 +1,5 @@
 {
-    "name": "jet",
+    "name": "jet-fetcher",
     "version": "1.0.0",
     "description": "Wrapper for fetch to make clean requests",
     "main": "index.js",
