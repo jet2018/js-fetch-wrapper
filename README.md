@@ -1,8 +1,8 @@
 ## About Jet library
 
-Jet provides a wrapper class for the [fetch]("https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"). It can be somehow tricky to use fetch API especially for a beginner. However, this library provides a simple way to use fetch API.
+jet-fetcher provides a wrapper class for the [fetch]("https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"). It can be somehow tricky to use fetch API especially for a beginner. However, this library provides a simple way to use fetch API. The package is fully customizable using its `custom` method that enables you customize the whole API
 
-It currently covers five request methods, that is,
+The package ships with the five commonly used http methods but has room for expansion. It covers:-
 
 ```
 GET
@@ -28,7 +28,7 @@ Examples.
    This can be overriden by setting `cors` to `true` and then defining your custom `Access-Control-Allow-Origin` which will also default to `*`.
 2. Defaults to returning the response as a `JSON` object.
 
-```JSON
+```JS
 response  = {
     'response': response,
     'data': resData
@@ -43,9 +43,10 @@ Whereas on `data`, that's where you can find the `data` object. which represents
 
 ## _Usage_
 
-import Jet from 'jet'
-
 ```js
+import Jet from 'jet-fetcher'
+
+
 let jet = new Jet(baseUrl="" // optional
 ));
 
@@ -87,4 +88,10 @@ Fork this repo, make your changes, test them and then make a pull request.
 
 ## Installation
 
-This guide will be attached soon.
+Simply run 
+```bash
+npm i jet-fetcher
+```
+
+## Known Issues
+The package works well with JS modules. Incase you get any importation issues, save your file as `.mjs` or define in your `package.json` `type` as `module`.
