@@ -1,6 +1,6 @@
 {
     "name": "jet-fetch",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Wrapper for fetch to make clean, faster, precise and fully customizable requests",
     "main": "index.js",
     "scripts": {
