@@ -24,7 +24,7 @@ class Jet {
         this.interceptWithJWTAuth = interceptWithJWTAuth
     }
 
-    async attachAuthorisatin() {
+    async attachAuthorisation() {
         // if the dev provided the token, use that, otherwise, attempt to get it from the localstorage
         let token = this.token? this.token:  localStorage.getItem(this.tokenBearerKey)
         
@@ -81,7 +81,7 @@ class Jet {
         }
 
         if (this.interceptWithJWTAuth) {
-            let auth = this.attachAuthorisatin
+            let auth = this.attachAuthorisation
             // if it has something from auth, lets use it 
             if (auth && !data['Authorization']) {
                 data['Authorization'] = auth['Authorization']
