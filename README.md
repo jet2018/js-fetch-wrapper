@@ -93,29 +93,8 @@ jet
   });
 ```
 
-## Authentication interceptor
-This is a new feature that has been added from version `1.0.3` that enables you to tell `jwt-fetch` to automatically intercept any request and attach authentication token - JWT. 
 
-To get this functionality working very well, follow the example below on your package instatiation. Please read through the comments to understand how the module works.
-
-```JS
-// first ofcourse import the library
-import Jet from 'jet-fetch';
-
-// then instantiate it.
-// On this point of instatiation, you can define your baseUrl and your token source
-// let me try to get my token from somewhere so that the library does not handle that for me.
-// NOTE: You should only do this if your package is not stored in localstorage, 
-// otherwise you may be repeating exactly what the packege is here to save you from
-let my_token = sessionStorage.getItem("my_token") // my_token this is how you are saving your token.
-const jet  = new JET()
-jet.baseUrl = "https://my_api_url.com/api/"
-jet.token = my_token; // here you are telling the library that on every request, try to get the this token.
-
-console.log(jet)
-```
-
-## With JWT Authentication
+## Interception with JWT Authentication
 We understand that most modern platforms are using Bearer Tokens or JWT or OAuth for securing their platforms therefore, the library ships in with amazing and simple to use tools for this.
 
 ### Instantiating with JWT in mind.
@@ -134,7 +113,7 @@ With just the above, the library will try to load the JWT from the localstorage,
 
 ### Customising the above.
 
-If your backend forexample does not expect the token as `Bearer`, maybe it expects it as `Token` or `JWT`, then your class should have an additional parameter `sendTokenAs` and if not defined will always default to `Bearer`.
+If your backend forexample does not expect the token as `Bearer`, maybe it expects it as `Token` or `JWT`, then your class should have an additional parameter `sendTokenAs` and if not defined, it will always default to `Bearer`.
 
 Example:
 ```JS
@@ -158,15 +137,16 @@ const jet = new Jet(
   tokenBearerKey="secretkey" // notice this
 )
 ```
+***NOTE:*** The above still expects your token to be stored in localstorage, but this is sometimes not the case, you can store you token anywhere!! The above may not help, read ahead to customise that.
 
 ### Full Customising
-The above will work for when you token is in your localstorage and really available for use. 
+The above will work well when your token is in your localstorage.
 
-But imagine one who is keeping this token in maybe sessionStorage or anywhere else.
+But imagine one who is keeping this token in maybe sessionStorage, realm db or anywhere!.
 
-Then it is also to define your interceptio with your own source of code like below. Remember this should be done on class instatiation otherwise it may break.
+Then it is also possible to define your interception with your own source of code like below. Remember this should be done on class instatiation otherwise it may break.
 
-As long as you endup with the code. The rest will work fine.
+As long as your functionality, once executed, returns the code, the below will work fine.
 ```JS
 import Jet from 'jet-fetch';
 
@@ -176,11 +156,11 @@ let my_token = sessionStorage.getItem("token")
 const jet = new Jet(
   baseUrl = "https:your-cool-base-url.com",
   interceptWithJWTAuth = true,
-  token = my_token
+  token = my_token // notice this
 )
 ```
 
-NOTE: When `token` is defined in the class, it will take precendence of the rest of the parameters you pass expect `interceptWithJWTAuth`. Which means, the library won't be checking in your localstorage at all.
+NOTE: When `token` is defined in the class, it will take precendence of the rest of the parameters you pass except `interceptWithJWTAuth`. Which means, the library won't be checking in your localstorage at all.
 
 But with this last one, Remember our token will be sent as `Bearer`, to customize that, just like as explained above, define your `sendTokenAs`. in the class instantiation.
 
@@ -193,7 +173,7 @@ let my_token = sessionStorage.getItem("token")
 const jet = new Jet
 jet.baseUrl = "https:your-cool-base-url.com"
 jet.token = my_token
-jet.sendTokenAs ="JWT"
+jet.sendTokenAs ="JWT" // notice this
 
 ```
 
@@ -213,13 +193,12 @@ jet.sendTokenAs ="JWT"
 export default jet;
 ```
 
-Goodluck with the new way of having fun with `APIS`.
+Goodluck with the new way of having fun with `APIs`.
 
 
 ## Contributing
 
 Fork this repo, make your changes, test them and then make a pull request.
 
-
-## Known Issues
-The package works well with JS modules. Incase you get any importation issues, save your file as `.mjs` or define in your `package.json` `type` as `module`.
+## License
+[MIT LICENSE](LICENSE)
