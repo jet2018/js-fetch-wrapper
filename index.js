@@ -55,48 +55,8 @@ class Jet {
             return Promise.reject(err)
         }
     }
-    
-    /**
-    * Sets up the url of the request.
-    * If the `baseUrl` was defined, it will just concatenate the given `url` to the `baseUrl` otherwise will send the url as is.
-    * @param {string} url 
-    * @returns string
-    */
-    setUrl(url) {
+
         
-        // if the baseUrl does not end with a trailing slash, add it
-        if (this.baseUrl != null && this.baseUrl.charAt(-1) != "/") {
-            this.baseUrl = this.baseUrl + "/"
-        }
-        // remove it from the url
-        if (this.baseUrl != null && url.charAt(0) == "/") {
-            url.charAt(0) = ""
-        }
-        
-        return this.baseUrl ? this.baseUrl + "" + url : url
-    }
-    
-    /**
-    * Configures the headers of the request, attempts to set the defaults if not provided
-    * @description This will attempt to set the default request type if one not given, cors, Access-Control-Allow-Origin, and Content-Type.
-    * All these can be overriden/customised  
-    * @param {*} config 
-    * @param {*} type 
-    * @returns 
-    */
-    setHeaders(config, type) {
-        //set the request method
-        if (!config['type']) {
-            config['method'] = type
-        }
-        // allow cors by default, user should set cors : true
-        if (!config['cors']) {
-            config['mode'] = 'cors'
-        }
-        
-        return config
-    }
-    
     /**
     * Checks if an object is empty
     * @param {object} obj The object to check
@@ -117,13 +77,6 @@ class Jet {
     * @param {object} config-> Request configurations
     * @returns Object -> Configuration with body combined
     */
-    setBody(body, config) {
-        if (body!=null && !this.isEmpty(body)) {
-            config['body'] = body
-        }
-        return config
-    }
-
     _setBody(body, config) {
         if (body!=null && !this.isEmpty(body)) {
             config['body'] = JSON.stringify(body)
@@ -189,24 +142,17 @@ class Jet {
         return this.headers
     }
 
-    // TODO seperate headers from the rest of the configs and the body
-    
-    
     /**
     * Populates the body and configurations of the request, should not be called directly from the instannce
     * @protected
     * @param {object} body Request body/data
     * @author jet2018
-    * @param {object} config Request configurations such as headers and any other settings
+    * @param {object} configs Request configurations such as headers and any other settings
     * @see [customising fetch](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#supplying_your_own_request_object)
+    * @param headers Request headers
     * @param {string} type Request type, that is, post, get, put ...
     * @returns Object
     */
-    populateData(body, config, type) {
-        const dataWithHeaders = this.setHeaders(config, type)
-        return this.setBody(body, dataWithHeaders)
-    }
-
     _populateData(type = "GET", body = null, headers = null, configs = null) {
         // set the body if the request is not get
         if (body !== null && type !== "GET") {
