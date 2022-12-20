@@ -202,7 +202,6 @@ class Jet {
     */
     async post(url, body = {},  headers={}, config = {}) {
         const { newUrl, data } = this._requestDefinition(url, "POST", body, headers, config)
-        console.log(newUrl, data)
         try {
             return this.flyer(newUrl, data)
         } catch (e) {
