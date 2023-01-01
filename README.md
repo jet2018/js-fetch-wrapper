@@ -1,3 +1,5 @@
+#### *NOTE:* _Starting 1st Jan 2023, We have moved to OSCA-KAMPALA, check us out under the repo [jet-fetch](https://github.com/OSCA-Kampala-Chapter/jet-fetch) and this repo will be abandoned in favor of the newly provided._
+
 ## About jet-fetch library
 
 jet-fetch provides a wrapper class for the [fetch]("https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"). It can be somehow tricky to use fetch API especially for a beginner. However, this library provides a simple way to use fetch API. The package is fully customizable using its `custom` method that enables you customize the whole API
