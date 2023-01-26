@@ -1,4 +1,4 @@
-#### *NOTE:* _Starting 1st Jan 2023, We have moved to OSCA-KAMPALA, check us out under the repo [jet-fetch](https://github.com/OSCA-Kampala-Chapter/jet-fetch) and this repo will be abandoned in favor of the newly provided._
+#### *NOTE:* _Starting 1st Jan 2023, We have moved to OSCA-KAMPALA, check us out under the repo [jet-fetch](https://github.com/OSCA-Kampala-Chapter/jet-fetch) and commits to this repo will be reviewed and shipped to the original admins but this will happen slowly, if you have a burning to address, please commit directly to defined repo._
 
 ## About jet-fetch library
 
