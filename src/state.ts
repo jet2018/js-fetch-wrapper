@@ -140,7 +140,7 @@ export class RequestStateTracker {
         listener(payload);
       }
     }
-    if (event === 'request:change' || event === 'request:start' || event === 'request:success' || event === 'request:error' || event === 'request:aborted' || event === 'request:retry') {
+    if (event === 'request:change') {
       for (const listener of this.globalListeners) {
         listener(payload as RequestStateSnapshot);
       }
