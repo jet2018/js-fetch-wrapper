@@ -50,11 +50,12 @@ const { data, status } = await jet.get<{ id: number }>('users/1');
 | Secure (`*s`) methods with JWT | Yes |
 | Portable token providers (no hard `localStorage`) | Yes |
 | FormData / Blob / multipart uploads | Yes |
-| Retries with exponential backoff | Yes |
+| Idempotent retries + `Idempotency-Key` | Yes |
 | Timeouts + `AbortController` | Yes |
 | Request lifecycle state (`loading`, etc.) | Yes |
-| Native Moonlight helpers | Yes |
+| Framework-agnostic resources (Vue / Angular / …) | Yes (`createJetResource`) |
 | Optional React hooks | Yes (`jet-fetch/react`) |
+| Moonlight POST + GET + unified helper | Yes (Pionia v3) |
 
 ---
 
@@ -81,7 +82,7 @@ pnpm add jet-fetch
   - Node.js **18+**
   - React Native (0.65+ / Hermes with fetch)
 - TypeScript **4.7+** recommended (types ship in the package)
-- React **17+** only if you use `jet-fetch/react`
+- React **17+** only if you import `jet-fetch/react` (optional). Vue/Angular/Svelte use `createJetResource`.
 
 ---
 
