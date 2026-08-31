@@ -1,3 +1,7 @@
-.idea
 node_modules/
-index.js
+dist/
+coverage/
+.idea/
+*.log
+.DS_Store
+*.tsbuildinfo
