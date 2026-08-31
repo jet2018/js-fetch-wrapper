@@ -176,6 +176,45 @@ describe('Jet HTTP', () => {
     expect(onRetry).toHaveBeenCalled();
   });
 
+  it('does not retry POST without idempotency key', async () => {
+    let attempts = 0;
+    mockFetchSequence([
+      () => {
+        attempts += 1;
+        throw new TypeError('network down');
+      },
+    ]);
+    const jet = new Jet({
+      baseUrl: 'https://api.test/',
+      tokenStorage: new MemoryStorage(),
+      retry: { retries: 3, retryDelay: 1, backoff: 'none', idempotentOnly: true },
+    });
+    await expect(jet.post('x', { a: 1 })).rejects.toBeInstanceOf(TypeError);
+    expect(attempts).toBe(1);
+  });
+
+  it('retries POST when Idempotency-Key is set', async () => {
+    let attempts = 0;
+    let seenKey: string | null = null;
+    mockFetchSequence([
+      (_u, init) => {
+        attempts += 1;
+        seenKey = new Headers(init?.headers).get('Idempotency-Key');
+        if (attempts < 2) throw new TypeError('network down');
+        return jsonResponse({ ok: true });
+      },
+    ]);
+    const jet = new Jet({
+      baseUrl: 'https://api.test/',
+      tokenStorage: new MemoryStorage(),
+      retry: { retries: 2, retryDelay: 1, backoff: 'none', idempotentOnly: true },
+    });
+    const res = await jet.post('x', { a: 1 }, undefined, { idempotencyKey: 'abc-123' });
+    expect(res.data).toEqual({ ok: true });
+    expect(attempts).toBe(2);
+    expect(seenKey).toBe('abc-123');
+  });
+
   it('times out requests', async () => {
     mockFetchSequence([
       async (_u, init) => {
@@ -260,6 +299,98 @@ describe('Moonlight', () => {
     const result = await jet.moonlightRequest({ service: 'a', action: 'b' });
     expect(handler).toHaveBeenCalled();
     expect(result).toMatchObject({ handled: true });
+  });
+
+  it('moonlightPost sends lowercase service/action to version root', async () => {
+    let url = '';
+    let body: Record<string, unknown> | null = null;
+    let method = '';
+    mockFetchSequence([
+      (input, init) => {
+        url = String(input);
+        method = init?.method || '';
+        body = JSON.parse(String(init?.body));
+        return jsonResponse({ returnCode: 0, returnMessage: 'ok', returnData: [] });
+      },
+    ]);
+    const jet = new Jet({ baseUrl: 'https://api.test/api/', tokenStorage: new MemoryStorage() });
+    await jet.moonlightPost({ SERVICE: 'product', ACTION: 'list', status: 'open' }, 'v1/');
+    expect(url).toBe('https://api.test/api/v1/');
+    expect(method).toBe('POST');
+    expect(body).toEqual({ service: 'product', action: 'list', status: 'open' });
+  });
+
+  it('moonlightGet uses /{service}/{action}/ path with query params', async () => {
+    let url = '';
+    let method = '';
+    mockFetchSequence([
+      (input, init) => {
+        url = String(input);
+        method = init?.method || '';
+        return jsonResponse({ returnCode: 0, returnMessage: 'ok', returnData: { items: [] } });
+      },
+    ]);
+    const jet = new Jet({ baseUrl: 'https://api.test/api/', tokenStorage: new MemoryStorage() });
+    await jet.moonlightGet({ service: 'product', action: 'list', status: 'open' }, 'v1/');
+    expect(method).toBe('GET');
+    expect(url).toBe('https://api.test/api/v1/product/list/?status=open');
+  });
+
+  it('moonlightRequest supports method GET via options object', async () => {
+    let url = '';
+    mockFetchSequence([
+      (input) => {
+        url = String(input);
+        return jsonResponse({ returnCode: 0, returnMessage: 'ok' });
+      },
+    ]);
+    const jet = new Jet({ baseUrl: 'https://api.test/api/', tokenStorage: new MemoryStorage() });
+    await jet.moonlightRequest({ service: 'auth', action: 'ping' }, { method: 'GET', version: 'v1/' });
+    expect(url).toBe('https://api.test/api/v1/auth/ping/');
+  });
+
+  it('checkPioniaStatusForVersion hits ping', async () => {
+    let url = '';
+    mockFetchSequence([
+      (input) => {
+        url = String(input);
+        return jsonResponse({ ok: true });
+      },
+    ]);
+    const jet = new Jet({ baseUrl: 'https://api.test/api/', tokenStorage: new MemoryStorage() });
+    await jet.checkPioniaStatusForVersion('v1/');
+    expect(url).toBe('https://api.test/api/v1/ping');
+  });
+
+  it('treats HTTP 422 as MoonLightError', async () => {
+    mockFetchSequence([
+      () =>
+        jsonResponse({ returnCode: 422, returnMessage: 'title is required' }, 422),
+    ]);
+    const jet = new Jet({ baseUrl: 'https://api.test/api/', tokenStorage: new MemoryStorage() });
+    await expect(jet.moonlightPost({ service: 'task', action: 'create' })).rejects.toBeInstanceOf(MoonLightError);
+  });
+});
+
+describe('framework-agnostic resource', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('createJetGetResource notifies subscribers', async () => {
+    mockFetchSequence([() => jsonResponse({ n: 1 })]);
+    const jet = new Jet({ baseUrl: 'https://api.test/', tokenStorage: new MemoryStorage() });
+    const { createJetGetResource } = await import('../src/resource.js');
+    const resource = createJetGetResource<{ n: number }>(jet, 'n', { key: 'n1' });
+    const snaps: string[] = [];
+    const stop = resource.subscribe((s) => snaps.push(s.status));
+    await resource.execute();
+    expect(resource.getSnapshot().data).toEqual({ n: 1 });
+    expect(snaps).toContain('loading');
+    expect(snaps).toContain('success');
+    stop();
+    resource.destroy();
   });
 });
 

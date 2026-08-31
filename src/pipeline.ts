@@ -1,7 +1,7 @@
 import { AbortRequestError, HttpError, isAbortError, TimeoutError } from './errors.js';
 import type { RequestStateTracker } from './state.js';
 import type { PipelineInput, JetResponse, RetryPolicy } from './types.js';
-import { computeDelay, isIdempotentMethod, parseResponse, sleep } from './utils.js';
+import { computeDelay, canRetryMethod, parseResponse, sleep } from './utils.js';
 
 function getFetch(): typeof fetch {
   if (typeof globalThis.fetch !== 'function') {
@@ -39,8 +39,14 @@ function combineSignals(signals: Array<AbortSignal | null | undefined>): AbortSi
   return controller.signal;
 }
 
-function shouldRetry(error: unknown, method: string, policy: RetryPolicy, response?: Response): boolean {
-  if (!isIdempotentMethod(method) && !policy.retryUnsafeMethods) {
+function shouldRetry(
+  error: unknown,
+  method: string,
+  policy: RetryPolicy,
+  response?: Response,
+  hasIdempotencyKey = false,
+): boolean {
+  if (!canRetryMethod(method, policy, hasIdempotencyKey)) {
     return false;
   }
   if (isAbortError(error) && !(error instanceof TimeoutError)) {
@@ -100,7 +106,11 @@ export async function runPipeline<T = unknown>(
 
       lastResponse = response;
 
-      if (!response.ok && shouldRetry(null, input.method, input.retry, response) && attempt < maxAttempts) {
+      if (
+        !response.ok &&
+        shouldRetry(null, input.method, input.retry, response, !!input.hasIdempotencyKey) &&
+        attempt < maxAttempts
+      ) {
         const delay = computeDelay(attempt, input.retry);
         input.retry.onRetry?.(attempt, new HttpError(response.statusText || `HTTP ${response.status}`, response.status, response));
         if (!input.silent && tracker) {
@@ -139,7 +149,13 @@ export async function runPipeline<T = unknown>(
         throw normalizedError instanceof Error ? normalizedError : new AbortRequestError();
       }
 
-      const retryable = shouldRetry(normalizedError, input.method, input.retry, lastResponse);
+      const retryable = shouldRetry(
+        normalizedError,
+        input.method,
+        input.retry,
+        lastResponse,
+        !!input.hasIdempotencyKey,
+      );
       if (retryable && attempt < maxAttempts) {
         const delay = computeDelay(attempt, input.retry);
         input.retry.onRetry?.(attempt, normalizedError);

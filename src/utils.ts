@@ -127,7 +127,7 @@ async function parseJsonSafe(response: Response): Promise<unknown> {
 
 export function mergeRetry(base?: RetryPolicy | false, override?: RetryPolicy | false): RetryPolicy {
   if (override === false) {
-    return { retries: 0 };
+    return { retries: 0, idempotentOnly: true };
   }
   const normalizedBase: RetryPolicy = base === false ? { retries: 0 } : base ?? {};
   const statuses = override?.retryOnStatuses ?? normalizedBase.retryOnStatuses ?? [408, 429, 500, 502, 503, 504];
@@ -136,11 +136,28 @@ export function mergeRetry(base?: RetryPolicy | false, override?: RetryPolicy | 
     retryDelay: 300,
     backoff: 'exponential',
     maxDelay: 10_000,
+    idempotentOnly: true,
     retryUnsafeMethods: false,
     ...normalizedBase,
     ...override,
     retryOnStatuses: statuses,
   };
+}
+
+/**
+ * Whether a request may be retried under the policy.
+ * Idempotent methods always qualify (when other checks pass).
+ * Non-idempotent methods qualify only when:
+ * - idempotentOnly is false, or
+ * - retryUnsafeMethods is true, or
+ * - an Idempotency-Key is present for this attempt
+ */
+export function canRetryMethod(method: string, policy: RetryPolicy, hasIdempotencyKey = false): boolean {
+  if (isIdempotentMethod(method)) return true;
+  if (hasIdempotencyKey) return true;
+  if (policy.retryUnsafeMethods) return true;
+  if (policy.idempotentOnly === false) return true;
+  return false;
 }
 
 export function computeDelay(attempt: number, policy: RetryPolicy): number {
@@ -204,4 +221,53 @@ export function hasServiceAndAction(data: object): { ok: true } | { ok: false; m
   if (!hasService) return { ok: false, missing: 'service' };
   if (!hasAction) return { ok: false, missing: 'action' };
   return { ok: true };
+}
+
+/** Extract service/action values case-insensitively and remaining params. */
+export function splitMoonlightPayload(data: MoonlightPayloadLike): {
+  service: string;
+  action: string;
+  params: Record<string, unknown>;
+} {
+  const record = { ...(data as Record<string, unknown>) };
+  let service = '';
+  let action = '';
+  for (const key of Object.keys(record)) {
+    const upper = key.toUpperCase();
+    if (upper === 'SERVICE') {
+      service = String(record[key] ?? '');
+      delete record[key];
+    } else if (upper === 'ACTION') {
+      action = String(record[key] ?? '');
+      delete record[key];
+    }
+  }
+  return { service, action, params: record };
+}
+
+/** Normalize Moonlight body to lowercase service/action (Pionia v3). */
+export function toMoonlightPostBody(data: MoonlightPayloadLike): Record<string, unknown> {
+  const { service, action, params } = splitMoonlightPayload(data);
+  return {
+    service,
+    action,
+    ...params,
+  };
+}
+
+/** Build GET path `/v1/{service}/{action}/` relative to version. */
+export function toMoonlightGetPath(version: string, service: string, action: string): string {
+  const ver = version.endsWith('/') ? version : `${version}/`;
+  const s = encodeURIComponent(service);
+  const a = encodeURIComponent(action);
+  return `${ver}${s}/${a}/`;
+}
+
+export type MoonlightPayloadLike = Record<string, unknown>;
+
+export function createIdempotencyKey(): string {
+  if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `jet-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }

@@ -28,7 +28,15 @@ export interface RetryPolicy {
   maxDelay?: number;
   /** HTTP statuses that should retry. Default: [408, 429, 500, 502, 503, 504] */
   retryOnStatuses?: number[];
-  /** Retry non-idempotent methods (POST/PATCH/DELETE). Default: false */
+  /**
+   * Only retry idempotent HTTP methods (GET/HEAD/OPTIONS/PUT/DELETE).
+   * Default: true. Set false (or use retryUnsafeMethods) to allow POST/PATCH retries.
+   */
+  idempotentOnly?: boolean;
+  /**
+   * @deprecated Prefer `idempotentOnly: false`. When true, allows POST/PATCH retries.
+   * Default: false
+   */
   retryUnsafeMethods?: boolean;
   /** Called before each retry sleep. */
   onRetry?: (attempt: number, error: unknown) => void;
@@ -78,6 +86,25 @@ export interface JetRequestOptions extends Omit<RequestInit, 'body' | 'headers' 
   secure?: boolean;
   /** Query string params appended to the URL. */
   params?: Record<string, string | number | boolean | null | undefined>;
+  /**
+   * Idempotency key for safe retries of non-GET requests.
+   * Sent as `Idempotency-Key` and allows POST/PATCH retries even when idempotentOnly is true.
+   */
+  idempotencyKey?: string;
+}
+
+/** Moonlight dispatch verb — Pionia supports POST body dispatch and optional GET path dispatch. */
+export type MoonlightHttpMethod = 'GET' | 'POST';
+
+export interface MoonlightRequestOptions extends JetRequestOptions {
+  /** HTTP verb for Moonlight dispatch. Default: 'POST' */
+  method?: MoonlightHttpMethod;
+  /** API version path, e.g. 'v1/'. Defaults to client defaultMoonlightVersion */
+  version?: string;
+  /** Extra headers for this Moonlight call */
+  headers?: HeadersInit;
+  /** Called with the successful Moonlight envelope */
+  callback?: (res: MoonlightResponse) => unknown;
 }
 
 export interface JetResponse<T = unknown> {
@@ -158,4 +185,6 @@ export interface PipelineInput {
   signal?: AbortSignal | null;
   requestKey?: string;
   silent?: boolean;
+  /** When true, non-idempotent methods may retry safely. */
+  hasIdempotencyKey?: boolean;
 }

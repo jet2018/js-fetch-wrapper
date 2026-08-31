@@ -28,11 +28,10 @@ const { data, status } = await jet.get<{ id: number }>('users/1');
 - [Creating a client](#creating-a-client)
 - [Making requests](#making-requests)
 - [Authentication](#authentication)
-- [Retrying](#retrying)
+- [Retrying (idempotent by default)](#retrying-idempotent-by-default)
 - [Timeouts and abort](#timeouts-and-abort)
-- [Request state](#request-state)
+- [Request state (framework-agnostic)](#request-state-framework-agnostic)
 - [Moonlight / Pionia](#moonlight--pionia)
-- [React hooks](#react-hooks)
 - [Errors](#errors)
 - [API reference](#api-reference)
 - [Migration from 1.x](#migration-from-1x)
@@ -337,10 +336,9 @@ If `sendTokenAs` is `''`, only the raw token is sent.
 Set `interceptWithJWTAuth: false` to prevent secure methods from attaching auth.
 
 ---
+## Retrying (idempotent by default)
 
-## Retrying
-
-Retries are **off by default**. Enable them on the client or per request.
+Retries are **off by default**. When enabled, jet-fetch only retries **idempotent** methods unless you opt in otherwise.
 
 ```ts
 const jet = new Jet({
@@ -350,7 +348,7 @@ const jet = new Jet({
     backoff: 'exponential',     // 'none' | 'fixed' | 'exponential'
     maxDelay: 10_000,
     retryOnStatuses: [408, 429, 500, 502, 503, 504],
-    retryUnsafeMethods: false,  // keep false to avoid double POST
+    idempotentOnly: true,       // default — GET/HEAD/OPTIONS/PUT/DELETE only
     onRetry: (attempt, error) => {
       console.debug('retrying', attempt, error);
     },
@@ -358,17 +356,28 @@ const jet = new Jet({
 });
 ```
 
-### What gets retried?
+### Idempotency rules
 
-- Network / transport failures
-- HTTP statuses listed in `retryOnStatuses`
-- Timeouts
+| Situation | Retries? |
+|-----------|----------|
+| `GET` / `HEAD` / `OPTIONS` / `PUT` / `DELETE` | Yes (when `retries > 0`) |
+| `POST` / `PATCH` with no key | **No** (default) |
+| `POST` / `PATCH` with `idempotencyKey` | **Yes** — sends `Idempotency-Key` header |
+| `idempotentOnly: false` or `retryUnsafeMethods: true` | Allows unsafe method retries |
 
-By default only **idempotent** methods retry: `GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`.
+```ts
+// Safe POST retries with an idempotency key
+await jet.post('orders', payload, undefined, {
+  idempotencyKey: crypto.randomUUID(),
+  retry: { retries: 2, backoff: 'exponential' },
+});
+```
 
-Set `retryUnsafeMethods: true` to allow `POST` / `PATCH` retries (use carefully).
+What gets retried: network failures, timeouts, and statuses in `retryOnStatuses`.
 
-Moonlight business failures (`returnCode !== success`) are **not** retried; only transport-level failures can be.
+Moonlight **business** failures (`returnCode !== success`) are never retried — only transport-level failures.
+
+Pass `retry: false` on a single call to disable retries for that request.
 
 ---
 
@@ -404,9 +413,9 @@ Aborted requests reject with an abort error and mark state as `aborted`.
 
 ---
 
-## Request state
+## Request state (framework-agnostic)
 
-Track loading UI without coupling to a framework.
+Core jet-fetch has **no React / Vue / Angular dependency**. Track loading with events or `createJetResource`.
 
 ```ts
 const jet = new Jet({
@@ -420,57 +429,106 @@ jet.on('request:retry', (s) => {});
 jet.on('request:success', (s) => {});
 jet.on('request:error', (s) => {});
 jet.on('request:aborted', (s) => {});
-jet.on('request:change', (s) => {}); // fires for every transition
+jet.on('request:change', (s) => {});
 
 await jet.get('dashboard', undefined, { requestKey: 'dashboard' });
-
 jet.isLoading;
 jet.getRequestState('dashboard');
 ```
 
-### Snapshot shape
+### `createJetResource` — Vue, Angular, Svelte, plain JS
 
 ```ts
-interface RequestStateSnapshot<T = unknown> {
-  id: string;
-  status: 'idle' | 'loading' | 'success' | 'error' | 'aborted';
-  loading: boolean;
-  data: T | null;
-  error: unknown | null;
-  attempt: number;
-  url?: string;
-  method?: string;
-  startedAt?: number;
-  finishedAt?: number;
-}
+import { createJetGetResource, createMoonlightResource } from 'jet-fetch';
+
+const users = createJetGetResource(jet, 'users', { key: 'users' });
+
+const stop = users.subscribe((snap) => {
+  // snap.loading, snap.data, snap.error, snap.status
+});
+
+await users.execute();
+users.abort();
+stop();
+users.destroy();
 ```
 
-Use a stable `requestKey` when you need to read or abort a specific call.
+**Vue 3**
+
+```ts
+import { ref, onMounted, onUnmounted } from 'vue';
+import { createJetGetResource } from 'jet-fetch';
+
+const resource = createJetGetResource(jet, 'users', { key: 'users' });
+const state = ref(resource.getSnapshot());
+const stop = resource.subscribe((s) => { state.value = s; });
+
+onMounted(() => resource.execute());
+onUnmounted(() => { stop(); resource.destroy(); });
+```
+
+**Angular**
+
+```ts
+import { createMoonlightResource } from 'jet-fetch';
+
+const resource = createMoonlightResource(this.jet, {
+  service: 'product',
+  action: 'list',
+}, { method: 'POST', key: 'products' });
+
+resource.subscribe((s) => {
+  this.zone.run(() => {
+    this.loading = s.loading;
+    this.data = s.data;
+    this.error = s.error;
+  });
+});
+
+await resource.execute();
+```
+
+### Optional React hooks
+
+React is an **optional peer dependency** — only needed if you import `jet-fetch/react`.
+
+```ts
+import { useJetRequest, useMoonlight } from 'jet-fetch/react';
+
+const { data, loading, error, refetch, abort } = useJetRequest(jet, 'users');
+const { execute, loading: mlLoading } = useMoonlight(jet, { secure: true, version: 'v1/' });
+await execute({ service: 'auth', action: 'profile' });
+```
 
 ---
 
 ## Moonlight / Pionia
 
-[Moonlight](https://pionia.netlify.app/moonlight/introduction-to-moonlight-architecture/) APIs use one versioned endpoint and a `service` + `action` body. All HTTP responses are typically `200`; business success is `returnCode === 0` (configurable).
+Aligned with [Pionia Requests & Responses](https://pionia.netlify.app/documentation/http/requests-and-responses/):
 
-### Assumptions
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/v1/ping` | Health check |
+| `POST` | `/api/v1/` | Primary dispatch `{ service, action, ...params }` |
+| `GET` | `/api/v1/{service}/{action}/` | Optional query-string dispatch |
 
-1. Requests are `POST` to a version path such as `v1/`
-2. Body includes `service` / `action` (or `SERVICE` / `ACTION`)
-3. Response includes `returnCode`, `returnMessage`, and usually `returnData` / `extraData`
-4. HTTP status is `200` even when the business call fails
+Pionia v3 expects **lowercase** `service` / `action`. jet-fetch normalizes uppercase keys on POST. Check **both** HTTP status (422/401/404) and `returnCode`.
 
-### Unauthenticated request
+### Health check
+
+```ts
+await jet.checkPioniaStatusForVersion('v1/'); // GET …/v1/ping
+```
+
+### Moonlight POST (primary)
 
 ```ts
 import { Jet, MoonLightError } from 'jet-fetch';
 
-const jet = new Jet({
-  baseUrl: 'http://localhost:8000/api/',
-});
+const jet = new Jet({ baseUrl: 'http://localhost:8000/api/' });
 
 try {
-  const res = await jet.moonlightRequest({
+  const res = await jet.moonlightPost({
     service: 'auth',
     action: 'login',
     email: 'ada@example.com',
@@ -483,28 +541,53 @@ try {
     console.error(error.message, error.returnCode, error.payload);
   }
 }
+
+await jet.secureMoonlightPost({ service: 'user', action: 'profile' }, 'v1/');
 ```
 
-### Authenticated request
+### Moonlight GET (optional path dispatch)
 
 ```ts
+// GET /api/v1/product/list/?status=open
+await jet.moonlightGet({
+  service: 'product',
+  action: 'list',
+  status: 'open',
+}, 'v1/');
+
+await jet.secureMoonlightGet({ service: 'user', action: 'me' }, 'v1/');
+```
+
+GET Moonlight calls are **idempotent** and participate in the default retry policy.
+
+### Both — unified helper
+
+`moonlightRequest` / `secureMoonlightRequest` support **both** verbs (default POST):
+
+```ts
+// POST (default) — same as moonlightPost
+await jet.moonlightRequest({ service: 'product', action: 'list' }, 'v1/');
+
+// GET via options object
+await jet.moonlightRequest(
+  { service: 'product', action: 'list', status: 'open' },
+  { method: 'GET', version: 'v1/' },
+);
+
 await jet.secureMoonlightRequest(
-  { SERVICE: 'user', ACTION: 'profile' },
-  'v2/',
+  { service: 'user', action: 'me' },
+  { method: 'GET', version: 'v1/' },
 );
 ```
 
-### Callback / subscription style
+### Callback style
 
 ```ts
-await jet.moonlightRequest(
+await jet.moonlightPost(
   { service: 'catalog', action: 'list' },
   'v1/',
   { 'X-Locale': 'en' },
-  (res) => {
-    // called with successful Moonlight payload
-    setItems(res.returnData);
-  },
+  (res) => setItems(res.returnData),
 );
 ```
 
@@ -513,7 +596,7 @@ await jet.moonlightRequest(
 ```ts
 const jet = new Jet({
   baseUrl: 'http://localhost:8000/api/',
-  moonlightSuccessCode: 200,
+  moonlightSuccessCode: 0,
   moonlightErrorHandler: (error) => {
     toast.error(error.returnMessage ?? 'Request failed');
     return error;
@@ -523,70 +606,19 @@ const jet = new Jet({
 
 When `moonlightErrorHandler` is set, Moonlight helpers **return** its result instead of throwing.
 
-### API availability check
+### Safe Moonlight POST retries
 
 ```ts
-await jet.checkPioniaStatusForVersion('v1/');
-```
-
-### Typed Moonlight payload
-
-```ts
-type Profile = { id: number; name: string };
-
-const res = await jet.secureMoonlightRequest<Profile>({
-  service: 'user',
-  action: 'me',
-});
-
-// res is MoonlightResponse<Profile> on success
-```
-
----
-
-## React hooks
-
-Optional peer dependency: `react >= 17`.
-
-```ts
-import { useJetRequest, useMoonlight } from 'jet-fetch/react';
-import { jet } from './api'; // your shared Jet instance
-
-function UsersPage() {
-  const { data, loading, error, refetch, abort } = useJetRequest(jet, 'users', {
-    requestKey: 'users-page',
-  });
-
-  if (loading) return <p>Loading…</p>;
-  if (error) return <p>Failed</p>;
-
-  return (
-    <>
-      <button onClick={() => refetch()}>Refresh</button>
-      <button onClick={() => abort()}>Cancel</button>
-      <pre>{JSON.stringify(data, null, 2)}</pre>
-    </>
-  );
-}
-
-function LoginForm() {
-  const { execute, loading, error } = useMoonlight(jet, {
-    requestKey: 'login',
-    secure: false,
-    version: 'v1/',
-  });
-
-  return (
-    <button
-      disabled={loading}
-      onClick={() =>
-        execute({ service: 'auth', action: 'login', email, password })
-      }
-    >
-      Sign in
-    </button>
-  );
-}
+await jet.moonlightPost(
+  { service: 'order', action: 'create' },
+  'v1/',
+  undefined,
+  undefined,
+  {
+    idempotencyKey: crypto.randomUUID(),
+    retry: { retries: 2 },
+  },
+);
 ```
 
 ---
@@ -596,10 +628,10 @@ function LoginForm() {
 | Class | When |
 |-------|------|
 | `JetError` | Base error |
-| `HttpError` | Non-OK HTTP used in retry signaling (`status`, `response`, `data`) |
+| `HttpError` | Non-OK HTTP used in retry signaling |
 | `TimeoutError` | Request exceeded `timeout` |
 | `AbortRequestError` | Request aborted |
-| `MoonLightError` | Moonlight business or client failure (`returnCode`, `payload`) |
+| `MoonLightError` | Moonlight business / HTTP / client failure |
 
 ```ts
 import { MoonLightError, TimeoutError, isAbortError } from 'jet-fetch';
@@ -607,13 +639,9 @@ import { MoonLightError, TimeoutError, isAbortError } from 'jet-fetch';
 try {
   await jet.get('slow', undefined, { timeout: 1000 });
 } catch (error) {
-  if (error instanceof TimeoutError) {
-    // …
-  } else if (isAbortError(error)) {
-    // …
-  } else if (error instanceof MoonLightError) {
-    // …
-  }
+  if (error instanceof TimeoutError) { /* … */ }
+  else if (isAbortError(error)) { /* … */ }
+  else if (error instanceof MoonLightError) { /* … */ }
 }
 ```
 
@@ -626,41 +654,28 @@ try {
 | Export | Kind |
 |--------|------|
 | `Jet` | Client class |
-| `default` | Alias of `Jet` |
-| `MemoryStorage` | In-memory `TokenStorage` |
-| `createLocalStorageAdapter` | Browser localStorage adapter |
-| `createSessionStorageAdapter` | Browser sessionStorage adapter |
-| `createAsyncStorageAdapter` | Wrap AsyncStorage-like APIs |
-| `resolveToken` | Low-level token resolver |
-| `RequestStateTracker` | Standalone state tracker |
-| `JetError`, `HttpError`, `TimeoutError`, `AbortRequestError`, `MoonLightError` | Errors |
-| `isAbortError` | Abort detector |
-| Types | `Configuration`, `RetryPolicy`, `JetRequestOptions`, `JetResponse`, `MoonlightPayload`, `MoonlightResponse`, `RequestStateSnapshot`, … |
+| `MemoryStorage` / storage adapters | Portable auth storage |
+| `createJetResource` | Framework-agnostic reactive resource |
+| `createJetGetResource` | GET resource helper |
+| `createMoonlightResource` | Moonlight GET/POST resource helper |
+| `MoonLightError`, `TimeoutError`, … | Errors |
 
-### Exports (`jet-fetch/react`)
+### Exports (`jet-fetch/react`) — optional
 
 | Export | Kind |
 |--------|------|
-| `useJetRequest` | Hook for GET (or secure GET) with loading state |
-| `useMoonlight` | Hook helper for Moonlight execute + loading state |
+| `useJetRequest` / `useMoonlight` | React hooks |
 
-### `Jet` instance members
+Requires peer `react` >= 17. Vue/Angular/Svelte should use `createJetResource` instead.
+
+### `Jet` Moonlight members
 
 | Member | Description |
 |--------|-------------|
-| `get` / `gets` | GET |
-| `post` / `posts` | POST |
-| `put` / `puts` | PUT |
-| `patch` / `patchs` | PATCH |
-| `delete` / `deletes` | DELETE |
-| `custom` | Arbitrary method |
-| `moonlightRequest` | Moonlight POST helper |
-| `secureMoonlightRequest` | Moonlight POST with auth |
-| `checkPioniaStatusForVersion` | Version availability GET |
-| `on` / `onStateChange` | Event subscriptions |
-| `getRequestState` | Read snapshot by id |
-| `isLoading` | Any tracked request in flight |
-| `abort` / `abortAll` | Cancel tracked requests |
+| `moonlightPost` / `secureMoonlightPost` | POST `{version}` with `{ service, action, … }` |
+| `moonlightGet` / `secureMoonlightGet` | GET `{version}{service}/{action}/` |
+| `moonlightRequest` / `secureMoonlightRequest` | Both — default POST; `{ method: 'GET' }` for path dispatch |
+| `checkPioniaStatusForVersion` | `GET {version}ping` |
 
 ---
 
@@ -668,37 +683,18 @@ try {
 
 | 1.x | 2.x |
 |-----|-----|
-| `new Jet(baseUrl, intercept, token, …)` | `new Jet({ baseUrl, … })` |
-| `import Jet from 'jet-fetch'` | Prefer `import { Jet } from 'jet-fetch'` |
-| Depends on `node-fetch` | Uses `globalThis.fetch` (Node 18+) |
-| Always `response.json()` | Configurable `responseType`; empty body → `null` |
-| Shared mutable headers | Headers copied per request |
-| `localStorage` required for JWT | `getToken` / adapters / MemoryStorage |
+| Positional constructor | `new Jet({ baseUrl, … })` |
+| `node-fetch` | `globalThis.fetch` (Node 18+) |
+| Moonlight POST only | `moonlightPost`, `moonlightGet`, and unified `moonlightRequest` |
 | `{ response, data }` | `{ response, data, status, ok, headers }` |
-| Client `Access-Control-Allow-Origin` | Removed (invalid on the client) |
-
-Minimal upgrade:
-
-```ts
-// before
-const jet = new Jet('https://api.example.com', true, null, 'SecretKey', 'Bearer');
-
-// after
-const jet = new Jet({
-  baseUrl: 'https://api.example.com',
-  interceptWithJWTAuth: true,
-  tokenBearerKey: 'SecretKey',
-  sendTokenAs: 'Bearer',
-});
-```
 
 ---
 
 ## Package scripts
 
 ```bash
-npm test          # vitest
-npm run build     # ESM + CJS + typings
+npm test
+npm run build
 npm run typecheck
 ```
 
@@ -706,10 +702,7 @@ npm run typecheck
 
 ## Contributing
 
-1. Fork and create a branch
-2. Make your changes with tests
-3. Run `npm test` and `npm run build`
-4. Open a pull request
+Fork, branch, test with `npm test` / `npm run build`, then open a PR.
 
 Issues: [github.com/jet2018/js-fetch-wrapper/issues](https://github.com/jet2018/js-fetch-wrapper/issues)
 

@@ -15,6 +15,12 @@ export {
   createAsyncStorageAdapter,
   resolveToken,
 } from './adapters/storage.js';
+export {
+  createJetResource,
+  createJetGetResource,
+  createMoonlightResource,
+} from './resource.js';
+export type { JetResource, JetResourceSnapshot } from './resource.js';
 export type {
   Configuration,
   RetryPolicy,
@@ -26,6 +32,8 @@ export type {
   MoonlightPayload,
   MoonlightResponse,
   MoonlightErrorHandler,
+  MoonlightHttpMethod,
+  MoonlightRequestOptions,
   ResponseType,
   TokenGetter,
   TokenStorage,

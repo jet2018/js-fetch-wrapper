@@ -5,21 +5,6 @@ import {
 import { MoonLightError } from './errors.js';
 import { runPipeline } from './pipeline.js';
 import { RequestStateTracker } from './state.js';
-import type {
-  Configuration,
-  JetEventMap,
-  JetEventName,
-  JetRequestOptions,
-  JetResponse,
-  MoonlightPayload,
-  MoonlightResponse,
-  RequestStateListener,
-  RequestStateSnapshot,
-  ResponseType,
-  RetryPolicy,
-  TokenGetter,
-  TokenStorage,
-} from './types.js';
 import {
   appendParams,
   hasServiceAndAction,
@@ -29,7 +14,27 @@ import {
   mergeRetry,
   serializeBody,
   shouldSetJsonContentType,
+  splitMoonlightPayload,
+  toMoonlightGetPath,
+  toMoonlightPostBody,
 } from './utils.js';
+import type {
+  Configuration,
+  JetEventMap,
+  JetEventName,
+  JetRequestOptions,
+  JetResponse,
+  MoonlightHttpMethod,
+  MoonlightPayload,
+  MoonlightRequestOptions,
+  MoonlightResponse,
+  RequestStateListener,
+  RequestStateSnapshot,
+  ResponseType,
+  RetryPolicy,
+  TokenGetter,
+  TokenStorage,
+} from './types.js';
 
 export class Jet {
   baseUrl: string | null;
@@ -202,41 +207,162 @@ export class Jet {
     return this.request<T>(type, url, body, headers, { ...config, secure: secure || config?.secure });
   }
 
+  /**
+   * Pionia health check: GET `{version}ping`
+   * @see https://pionia.netlify.app/documentation/http/requests-and-responses/
+   */
   async checkPioniaStatusForVersion(versionName = 'v1/'): Promise<JetResponse> {
-    if (this.baseUrl && this.baseUrl.includes(versionName)) {
-      return this.get('');
-    }
-    return this.get(versionName);
+    const version = versionName.endsWith('/') ? versionName : `${versionName}/`;
+    return this.get(`${version}ping`);
   }
 
+  /**
+   * Moonlight POST dispatch — primary Pionia verb.
+   * POST `{version}` with body `{ service, action, ...params }` (lowercase keys).
+   */
+  async moonlightPost<T = unknown>(
+    data: MoonlightPayload = {},
+    targetVersion?: string,
+    extraHeaders?: HeadersInit,
+    callback?: (res: MoonlightResponse<T>) => unknown,
+    config?: JetRequestOptions,
+  ): Promise<MoonlightResponse<T> | unknown> {
+    return this.executeMoonlight<T>(data, 'POST', {
+      ...config,
+      version: targetVersion,
+      headers: extraHeaders ?? config?.headers,
+      callback: callback as MoonlightRequestOptions['callback'],
+      secure: false,
+    });
+  }
+
+  /** Authenticated Moonlight POST. */
+  async secureMoonlightPost<T = unknown>(
+    data: MoonlightPayload = {},
+    targetVersion?: string,
+    extraHeaders?: HeadersInit,
+    callback?: (res: MoonlightResponse<T>) => unknown,
+    config?: JetRequestOptions,
+  ): Promise<MoonlightResponse<T> | unknown> {
+    return this.executeMoonlight<T>(data, 'POST', {
+      ...config,
+      version: targetVersion,
+      headers: extraHeaders ?? config?.headers,
+      callback: callback as MoonlightRequestOptions['callback'],
+      secure: true,
+    });
+  }
+
+  /**
+   * Moonlight GET dispatch — optional Pionia query-string path.
+   * GET `{version}{service}/{action}/?params`
+   */
+  async moonlightGet<T = unknown>(
+    data: MoonlightPayload = {},
+    targetVersion?: string,
+    extraHeaders?: HeadersInit,
+    callback?: (res: MoonlightResponse<T>) => unknown,
+    config?: JetRequestOptions,
+  ): Promise<MoonlightResponse<T> | unknown> {
+    return this.executeMoonlight<T>(data, 'GET', {
+      ...config,
+      version: targetVersion,
+      headers: extraHeaders ?? config?.headers,
+      callback: callback as MoonlightRequestOptions['callback'],
+      secure: false,
+    });
+  }
+
+  /** Authenticated Moonlight GET. */
+  async secureMoonlightGet<T = unknown>(
+    data: MoonlightPayload = {},
+    targetVersion?: string,
+    extraHeaders?: HeadersInit,
+    callback?: (res: MoonlightResponse<T>) => unknown,
+    config?: JetRequestOptions,
+  ): Promise<MoonlightResponse<T> | unknown> {
+    return this.executeMoonlight<T>(data, 'GET', {
+      ...config,
+      version: targetVersion,
+      headers: extraHeaders ?? config?.headers,
+      callback: callback as MoonlightRequestOptions['callback'],
+      secure: true,
+    });
+  }
+
+  /**
+   * Unified Moonlight helper — supports both GET and POST (default POST).
+   *
+   * @example
+   * await jet.moonlightRequest({ service: 'product', action: 'list' });
+   * await jet.moonlightRequest({ service: 'product', action: 'list' }, { method: 'GET', version: 'v1/' });
+   */
   async moonlightRequest<T = unknown>(
     data: MoonlightPayload = {},
-    targetVersion?: string,
+    targetVersionOrOptions?: string | MoonlightRequestOptions,
     extraHeaders?: HeadersInit,
     callback?: (res: MoonlightResponse<T>) => unknown,
     config?: JetRequestOptions,
   ): Promise<MoonlightResponse<T> | unknown> {
-    return this.executeMoonlight<T>(data, targetVersion, extraHeaders, callback, { ...config, secure: false });
+    if (typeof targetVersionOrOptions === 'object' && targetVersionOrOptions !== null) {
+      const opts = targetVersionOrOptions;
+      return this.executeMoonlight<T>(data, opts.method ?? 'POST', {
+        ...opts,
+        secure: opts.secure ?? false,
+        callback: (opts.callback as MoonlightRequestOptions['callback']) ?? (callback as MoonlightRequestOptions['callback']),
+      });
+    }
+    return this.executeMoonlight<T>(data, 'POST', {
+      ...config,
+      version: targetVersionOrOptions,
+      headers: extraHeaders ?? config?.headers,
+      callback: callback as MoonlightRequestOptions['callback'],
+      secure: false,
+    });
   }
 
+  /**
+   * Secure unified Moonlight helper — GET or POST with auth.
+   * Default method is POST; pass `{ method: 'GET' }` for path dispatch.
+   */
   async secureMoonlightRequest<T = unknown>(
     data: MoonlightPayload = {},
-    targetVersion?: string,
+    targetVersionOrOptions?: string | MoonlightRequestOptions,
     extraHeaders?: HeadersInit,
     callback?: (res: MoonlightResponse<T>) => unknown,
     config?: JetRequestOptions,
   ): Promise<MoonlightResponse<T> | unknown> {
-    return this.executeMoonlight<T>(data, targetVersion, extraHeaders, callback, { ...config, secure: true });
+    if (typeof targetVersionOrOptions === 'object' && targetVersionOrOptions !== null) {
+      const opts = targetVersionOrOptions;
+      return this.executeMoonlight<T>(data, opts.method ?? 'POST', {
+        ...opts,
+        secure: true,
+        callback: (opts.callback as MoonlightRequestOptions['callback']) ?? (callback as MoonlightRequestOptions['callback']),
+      });
+    }
+    return this.executeMoonlight<T>(data, 'POST', {
+      ...config,
+      version: targetVersionOrOptions,
+      headers: extraHeaders ?? config?.headers,
+      callback: callback as MoonlightRequestOptions['callback'],
+      secure: true,
+    });
   }
 
   private async executeMoonlight<T>(
     data: MoonlightPayload,
-    targetVersion: string | undefined,
-    extraHeaders: HeadersInit | undefined,
-    callback: ((res: MoonlightResponse<T>) => unknown) | undefined,
-    config: JetRequestOptions | undefined,
+    method: MoonlightHttpMethod,
+    options: MoonlightRequestOptions = {},
   ): Promise<MoonlightResponse<T> | unknown> {
-    const version = targetVersion ?? this.defaultMoonlightVersion;
+    const {
+      version: versionOpt,
+      headers: extraHeaders,
+      callback,
+      secure,
+      idempotencyKey,
+      ...rest
+    } = options;
+    const version = versionOpt ?? this.defaultMoonlightVersion;
     const check = hasServiceAndAction(data);
     if (!check.ok) {
       const message =
@@ -249,15 +375,64 @@ export class Jet {
       throw new MoonLightError(message, { returnCode: this.internalErrorCode });
     }
 
+    const { service, action, params } = splitMoonlightPayload(data as Record<string, unknown>);
+
     try {
-      const response = await this.request<MoonlightResponse<T>>(
-        'POST',
-        version,
-        data,
-        extraHeaders,
-        config,
-      );
+      let response: JetResponse<MoonlightResponse<T>>;
+
+      if (method === 'GET') {
+        // Pionia optional GET: /api/v1/{service}/{action}/?params
+        // GET is idempotent — safe to retry under default policy.
+        const path = toMoonlightGetPath(version, service, action);
+        const query = Object.fromEntries(
+          Object.entries(params).map(([k, v]) => [
+            k,
+            v === null || v === undefined ? undefined : typeof v === 'object' ? JSON.stringify(v) : (v as string | number | boolean),
+          ]),
+        );
+        response = await this.request<MoonlightResponse<T>>('GET', path, null, extraHeaders, {
+          ...rest,
+          params: { ...rest.params, ...query },
+          secure,
+        });
+      } else {
+        // Primary Pionia POST: /api/v1/ with { service, action, ...params }
+        const body = toMoonlightPostBody(data as Record<string, unknown>);
+        // POST is not idempotent unless an Idempotency-Key is provided.
+        response = await this.request<MoonlightResponse<T>>('POST', version, body, extraHeaders, {
+          ...rest,
+          secure,
+          idempotencyKey,
+        });
+      }
+
+      // Pionia v3: HTTP status matters (422/401/404) in addition to returnCode.
       const payload = response.data;
+      if (!response.ok) {
+        const message =
+          (payload && typeof payload === 'object' && 'returnMessage' in payload
+            ? String((payload as MoonlightResponse).returnMessage ?? '')
+            : '') || `Moonlight HTTP ${response.status}`;
+        if (this.moonlightErrorHandler) {
+          return this.moonlightErrorHandler({
+            ...(typeof payload === 'object' && payload ? payload : {}),
+            returnMessage: message,
+            returnCode:
+              typeof payload === 'object' && payload && 'returnCode' in payload
+                ? (payload as MoonlightResponse).returnCode
+                : this.internalErrorCode,
+          });
+        }
+        throw new MoonLightError(message, {
+          cause: payload,
+          returnCode:
+            typeof payload === 'object' && payload && 'returnCode' in payload
+              ? (payload as MoonlightResponse).returnCode
+              : this.internalErrorCode,
+          payload: typeof payload === 'object' && payload ? (payload as MoonlightResponse) : undefined,
+        });
+      }
+
       const returnCode = payload?.returnCode;
       if (returnCode !== this.moonlightSuccessCode) {
         if (this.moonlightErrorHandler) {
@@ -270,7 +445,7 @@ export class Jet {
         });
       }
       if (callback) {
-        return callback(payload);
+        return callback(payload as MoonlightResponse);
       }
       return payload;
     } catch (error) {
@@ -304,6 +479,7 @@ export class Jet {
       silent,
       secure,
       params,
+      idempotencyKey,
       headers: configHeaders,
       ...restInit
     } = config;
@@ -317,6 +493,10 @@ export class Jet {
 
     // Never send Access-Control-Allow-Origin from the client.
     requestHeaders.delete('Access-Control-Allow-Origin');
+
+    if (idempotencyKey) {
+      requestHeaders.set('Idempotency-Key', idempotencyKey);
+    }
 
     if (secure) {
       await this.attachAuthorization(requestHeaders);
@@ -354,6 +534,7 @@ export class Jet {
           signal: signal ?? localController.signal,
           requestKey: id,
           silent,
+          hasIdempotencyKey: !!idempotencyKey,
         },
         this.state,
       );
