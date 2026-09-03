@@ -1,30 +1,80 @@
 {
-    "name": "jet-fetch",
-    "version": "1.0.6",
-    "description": "Wrapper for fetch to make clean, faster, precise and fully customizable requests",
-    "main": "index.js",
-    "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "jet-fetch",
+  "version": "2.0.0",
+  "description": "TypeScript-first fetch wrapper with Moonlight support, retries, and request-state tracking",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
     },
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/jet2018/js-fetch-wrapper.git"
+    "./react": {
+      "types": "./dist/types/hooks/react.d.ts",
+      "import": "./dist/esm/hooks/react.js",
+      "require": "./dist/cjs/hooks/react.js",
+      "default": "./dist/esm/hooks/react.js"
     },
-    "keywords": [
-        "axios",
-        "fetch",
-        "js",
-        "node",
-        "modules"
-    ],
-    "author": "jet2018",
-    "license": "ISC",
-    "type": "module",
-    "bugs": {
-        "url": "https://github.com/jet2018/js-fetch-wrapper/issues"
-    },
-    "homepage": "https://github.com/jet2018/js-fetch-wrapper#readme",
-    "dependencies": {
-        "node-fetch": "^2.6.7"
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run clean && npm run build:esm && npm run build:cjs && npm run build:types && node scripts/write-cjs-package.mjs",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:types": "tsc -p tsconfig.types.json",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jet2018/js-fetch-wrapper.git"
+  },
+  "keywords": [
+    "fetch",
+    "http",
+    "rest",
+    "api",
+    "typescript",
+    "moonlight",
+    "pionia",
+    "jwt",
+    "retry",
+    "react-native"
+  ],
+  "author": "jet2018",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jet2018/js-fetch-wrapper/issues"
+  },
+  "homepage": "https://github.com/jet2018/js-fetch-wrapper#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
     }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "react": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
 }

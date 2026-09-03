@@ -1,232 +1,714 @@
-#### *NOTE:* _Starting 1st Jan 2023, We have moved to OSCA-KAMPALA, check us out under the repo [jet-fetch](https://github.com/OSCA-Kampala-Chapter/jet-fetch) and commits to this repo will be reviewed and shipped to the original admins but this will happen slowly, if you have a burning to address, please commit directly to defined repo._
+# jet-fetch
 
-## About jet-fetch library
+**TypeScript-first fetch client** for browsers, React Native, and Node 18+.
 
-jet-fetch provides a wrapper class for the [fetch]("https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"). It can be somehow tricky to use fetch API especially for a beginner. However, this library provides a simple way to use fetch API. The package is fully customizable using its `custom` method that enables you customize the whole API
+Built for everyday REST work and first-class [Moonlight](https://pionia.netlify.app/moonlight/introduction-to-moonlight-architecture/) / [Pionia](https://pionia.netlify.app) backends — with retries, timeouts, portable JWT auth, and request-state tracking.
 
-The package ships with the five commonly used http methods but has room for expansion. It covers:-
+```ts
+import { Jet } from 'jet-fetch';
 
+const jet = new Jet({
+  baseUrl: 'https://api.example.com/api/',
+  getToken: () => localStorage.getItem('token'),
+  timeout: 15_000,
+  retry: { retries: 3, backoff: 'exponential' },
+});
+
+const { data, status } = await jet.get<{ id: number }>('users/1');
 ```
-GET
-POST
-PUT
-DELETE
-PATCH
-```
 
-The above are supported by default as they seem to be the commonly used methods.
+---
 
-The plugin is totally customizable and therefore can be simple to play with.
+## Table of contents
 
-With a good knowledge of the fetch API, you can easily implement your own fashion of the library.
+- [Why jet-fetch](#why-jet-fetch)
+- [Install](#install)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Creating a client](#creating-a-client)
+- [Making requests](#making-requests)
+- [Authentication](#authentication)
+- [Retrying (idempotent by default)](#retrying-idempotent-by-default)
+- [Timeouts and abort](#timeouts-and-abort)
+- [Request state (framework-agnostic)](#request-state-framework-agnostic)
+- [Moonlight / Pionia](#moonlight--pionia)
+- [Errors](#errors)
+- [API reference](#api-reference)
+- [Migration from 1.x](#migration-from-1x)
+- [Contributing](#contributing)
+- [License](#license)
 
-## Installation
+---
 
-With npm, simply run 
+## Why jet-fetch
+
+| Feature | Support |
+|---------|---------|
+| TypeScript-only, typed responses | Yes |
+| Browsers + Node 18+ + React Native | Yes (`globalThis.fetch`) |
+| GET / POST / PUT / PATCH / DELETE + `custom` | Yes |
+| Secure (`*s`) methods with JWT | Yes |
+| Portable token providers (no hard `localStorage`) | Yes |
+| FormData / Blob / multipart uploads | Yes |
+| Idempotent retries + `Idempotency-Key` | Yes |
+| Timeouts + `AbortController` | Yes |
+| Request lifecycle state (`loading`, etc.) | Yes |
+| Framework-agnostic resources (Vue / Angular / …) | Yes (`createJetResource`) |
+| Optional React hooks | Yes (`jet-fetch/react`) |
+| Moonlight POST + GET + unified helper | Yes (Pionia v3) |
+
+---
+
+## Install
+
 ```bash
-npm i jet-fetch
+npm install jet-fetch
 ```
-or with yarn
-```bash 
+
+```bash
 yarn add jet-fetch
 ```
 
-## _Defaults_
+```bash
+pnpm add jet-fetch
+```
 
-The library provides various defaults out of the box. All of which can also be overwritten.
+---
 
-Examples.
+## Requirements
 
-1. The library by default will allow `cors` if you do not manually set them.
-   This can be overriden by setting `cors` to `true` and then defining your custom `Access-Control-Allow-Origin` which will also default to `*`.
-2. Defaults to returning the response as a `JSON` object.
+- A runtime with **`globalThis.fetch`**
+  - Modern evergreen browsers
+  - Node.js **18+**
+  - React Native (0.65+ / Hermes with fetch)
+- TypeScript **4.7+** recommended (types ship in the package)
+- React **17+** only if you import `jet-fetch/react` (optional). Vue/Angular/Svelte use `createJetResource`.
 
-```JS
-response  = {
-    'response': response,
-    'data': resData
+---
+
+## Quick start
+
+```ts
+import { Jet } from 'jet-fetch';
+
+const jet = new Jet({
+  baseUrl: 'https://api.example.com/api/',
+});
+
+// Relative to baseUrl
+const users = await jet.get('users');
+console.log(users.data, users.status);
+
+// Absolute URL still works
+await jet.get('https://other.example.com/health');
+
+// JSON body
+await jet.post('users', { name: 'Ada' });
+
+ // Multipart upload
+const form = new FormData();
+form.append('file', file);
+await jet.post('uploads', form);
+```
+
+Named export is preferred:
+
+```ts
+import { Jet } from 'jet-fetch';
+```
+
+A default export is kept for compatibility: `import Jet from 'jet-fetch'`.
+
+---
+
+## Creating a client
+
+Pass a single **options object** to the constructor.
+
+```ts
+import { Jet, MemoryStorage } from 'jet-fetch';
+
+const jet = new Jet({
+  baseUrl: 'https://api.example.com/api/',
+  getToken: async () => secureStore.getToken(),
+  sendTokenAs: 'Bearer',
+  defaultHeaders: {
+    Accept: 'application/json',
+    'X-App-Version': '2.0.0',
+  },
+  timeout: 15_000,
+  retry: { retries: 3, backoff: 'exponential' },
+  responseType: 'json',
+  cachable: true,
+  moonlightSuccessCode: 0,
+  defaultMoonlightVersion: 'v1/',
+  onStateChange: (state) => {
+    // state.loading, state.status, state.data, state.error
+  },
+});
+```
+
+### Configuration options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `baseUrl` | `string \| null` | `null` | Prefixed onto relative request URLs |
+| `getToken` | `() => string \| null \| Promise<…>` | — | Preferred token provider (sync or async) |
+| `token` | `string \| TokenGetter \| null` | `null` | Static token or getter (1.x compatible) |
+| `tokenStorage` | `TokenStorage` | `localStorage` when available | Key-value store used when `getToken` / `token` are unset |
+| `tokenBearerKey` | `string` | `'SecretKey'` | Key read from `tokenStorage` |
+| `sendTokenAs` | `string` | `'Bearer'` | Authorization scheme prefix (`Bearer`, `JWT`, `Token`, or `''`) |
+| `interceptWithJWTAuth` | `boolean` | auto | When `false`, secure methods will not attach auth |
+| `defaultHeaders` | `HeadersInit` | `{}` | Headers merged into every request (copied per call) |
+| `cachable` | `boolean` | `true` | Sets Request `cache` for GET/HEAD (`default` vs `no-cache`) |
+| `timeout` | `number` | `0` | Default timeout in ms (`0` = none) |
+| `retry` | `RetryPolicy` | `{ retries: 0 }` | Default retry policy |
+| `responseType` | `ResponseType` | `'json'` | How to parse response bodies |
+| `moonlightSuccessCode` | `number` | `0` | Moonlight business success code |
+| `moonlightErrorHandler` | `function` | — | Custom Moonlight error handler (suppresses throw) |
+| `internalErrorCode` | `number` | `success + 1000` | Code used for transport / client-side Moonlight errors |
+| `defaultMoonlightVersion` | `string` | `'v1/'` | Default Moonlight version path |
+| `onStateChange` | `(snapshot) => void` | — | Global request-state listener |
+
+---
+
+## Making requests
+
+### Standard methods
+
+```ts
+await jet.get(url?, headers?, config?);
+await jet.post(url?, body?, headers?, config?);
+await jet.put(url?, body?, headers?, config?);
+await jet.patch(url?, body?, headers?, config?);
+await jet.delete(url?, body?, headers?, config?);
+await jet.custom(url, method, body?, headers?, config?, secure?);
+```
+
+### Secure methods (attach Authorization)
+
+```ts
+await jet.gets(url?, headers?, config?);
+await jet.posts(url?, body?, headers?, config?);
+await jet.puts(url?, body?, headers?, config?);
+await jet.patchs(url?, body?, headers?, config?);
+await jet.deletes(url?, body?, headers?, config?);
+await jet.custom(url, method, body, headers, config, true);
+```
+
+### Response shape
+
+Every HTTP method resolves to:
+
+```ts
+interface JetResponse<T = unknown> {
+  response: Response; // native Fetch Response
+  data: T;            // parsed body
+  status: number;
+  ok: boolean;
+  headers: Headers;
 }
 ```
 
-On `response`, that's where you can find the `response` object. such as `status`, `statusText`, `headers`, `ok`, `redirected`, `type`, `url`, `body`, `bodyUsed`.
-
-Whereas on `data`, that's where you can find the `data` object. which represents the actual data from the server.
-
-`baseUrl` can be defined while instatiating the Jet class, this will be the base url for all the requests.
-
-## _Usage_
-
-```js
-import Jet from 'jet-fetch'
-
-
-let jet = new Jet(baseUrl="" // optional
-));
-
-```
-## With JWT Authentication in mind
-The library comes with full support for JWT authentication.
-
-## Interception with JWT Authentication
-
-We understand that most modern platforms are using Bearer Tokens or JWT or OAuth for securing their platforms therefore, the library ships in with amazing and simple to use tools for this.
-
-### Instantiating with JWT in mind
-
-If your app is using JWT authentication, which in most cases will be stored in `localstorage` as `Bearer`, you can define your `Jet` class as below. If this is the case for you, then the code below is enough for you.
-
-```JS
-
-import Jet from 'jet-fetch';
-
-const jet = new Jet(
-  baseUrl = "https:your-cool-base-url.com",
-  interceptWithJWTAuth = true // notice this.
-  )
-```
-
-With just the above, the library will try to load the JWT from the localstorage, send it to the backend as "Bearer \<token from the localstorage>" and add to your "Authorization" header attribute.
-
-### Customising the above
-
-If your backend forexample does not expect the token as `Bearer`, maybe it expects it as `Token` or `JWT`, then your class should have an additional parameter `sendTokenAs` and if not defined, it will always default to `Bearer`.
-
 Example:
 
-```JS
-import Jet from 'jet-fetch';
-
-const jet = new Jet(
-  baseUrl = "https:your-cool-base-url.com",
-  interceptWithJWTAuth = true,
-  sendTokenAs="Token" // notice this
-)
+```ts
+const res = await jet.get<{ name: string }>('profile');
+if (res.ok) {
+  console.log(res.data.name);
+  console.log(res.status); // 200
+}
 ```
 
-If your token is not stored as `Bearer` in your localstorage, maybe you keep it as `secretkey`, then you call tell the package to look for that like this.
+### Per-request options
 
-```JS
-import Jet from 'jet-fetch';
-
-const jet = new Jet(
-  baseUrl = "https:your-cool-base-url.com",
-  interceptWithJWTAuth = true,
-  tokenBearerKey="secretkey" // notice this
-)
+```ts
+await jet.get('items', undefined, {
+  params: { page: 1, q: 'jet' },   // query string
+  headers: { 'X-Trace': '1' },
+  timeout: 5_000,                  // override client timeout
+  retry: { retries: 2 },           // override retry policy
+  responseType: 'json',            // json | text | blob | arrayBuffer | auto
+  requestKey: 'items-list',        // for state tracking / abort
+  signal: controller.signal,       // external AbortSignal
+  cache: 'no-store',               // any valid RequestInit field
+});
 ```
 
-***NOTE:*** The above still expects your token to be stored in localstorage, but this is sometimes not the case, you can store you token anywhere!! The above may not help, read ahead to customise that.
+Pass `retry: false` to disable retries for one call.
 
-### Full Customising of the above
+### Request bodies
 
-The above will work well when your token is in your localstorage.
+| Body type | Behavior |
+|-----------|----------|
+| Plain object / array | `JSON.stringify` + `Content-Type: application/json` |
+| `FormData` | Sent as-is (browser sets multipart boundary) |
+| `Blob` / `File` / `URLSearchParams` / `ArrayBuffer` / typed arrays | Sent as-is |
+| `string` | Sent as-is |
 
-But imagine one who is keeping this token in maybe sessionStorage, realm db or anywhere!.
+```ts
+// JSON
+await jet.post('users', { email: 'a@b.com' });
 
-Then it is also possible to define your interception with your own source of code like below. Remember this should be done on class instatiation otherwise it may break.
-
-As long as your functionality, once executed, returns the code, the below will work fine.
-
-```JS
-import Jet from 'jet-fetch';
-
-// here the user is getting the token from the sessionStorage.
-let my_token = sessionStorage.getItem("token")
-
-const jet = new Jet(
-  baseUrl = "https:your-cool-base-url.com",
-  interceptWithJWTAuth = true,
-  token = my_token // notice this
-)
+// Multipart
+const form = new FormData();
+form.append('avatar', file);
+await jet.posts('me/avatar', form);
 ```
 
-NOTE: When `token` is defined in the class, it will take precendence of the rest of the parameters you pass except `interceptWithJWTAuth`. Which means, the library won't be checking in your localstorage at all.
+### Custom methods
 
-But with this last one, Remember our token will be sent as `Bearer`, to customize that, just like as explained above, define your `sendTokenAs`. in the class instantiation.
-
-```JS
-import Jet from 'jet-fetch';
-
-// here the user is getting the token from the sessionStorage.
-let my_token = sessionStorage.getItem("token")
-
-const jet = new Jet
-jet.baseUrl = "https:your-cool-base-url.com"
-jet.token = my_token
-jet.sendTokenAs ="JWT" // notice this
-
+```ts
+await jet.custom('resource', 'HEAD');
+await jet.custom('resource', 'OPTIONS', null, {}, {}, false);
 ```
 
-Now, after fully defining your `Jet` instance, you can then export it and start using it in the rest of your application.
+---
 
-```JS
-import Jet from 'jet-fetch';
+## Authentication
 
-// here the user is getting the token from the sessionStorage.
-let my_token = sessionStorage.getItem("token")
+jet-fetch never requires `localStorage`. Prefer an explicit token source.
 
-const jet =  new Jet
-jet.baseUrl = "https:your-cool-base-url.com"
-jet.token = my_token
-jet.sendTokenAs ="JWT"
+### 1. `getToken` (recommended)
 
-export default jet;
+```ts
+const jet = new Jet({
+  baseUrl: 'https://api.example.com',
+  getToken: async () => await SecureStore.getItemAsync('token'),
+});
+
+await jet.gets('/me'); // Authorization: Bearer <token>
 ```
 
-## Performing Requests --with examples
-The following examples assume you have already initailized the library. For all the examples below, `headers` and `config` is optional.
+### 2. Static `token`
 
-### GET 
-#### NOTE: `GET` requests do not support passing in the body.
-```JS
-jet.
-  get(url="users", headers={}, config={})
-  .then(res => console.log(res.data))
-  .catch(err => console.debug(res.response.statusText))
+```ts
+const jet = new Jet({
+  baseUrl: 'https://api.example.com',
+  token: sessionStorage.getItem('token'),
+  sendTokenAs: 'JWT',
+});
 ```
 
-### POST
-```JS
-let data = {username: "jet", password:12345}
+### 3. Storage adapters
 
-jet.
-  post("users", data, headers={}, config={})
-  .then(res => res.data)
+```ts
+import {
+  Jet,
+  MemoryStorage,
+  createLocalStorageAdapter,
+  createSessionStorageAdapter,
+  createAsyncStorageAdapter,
+} from 'jet-fetch';
 
+// Node / tests / SSR
+new Jet({ tokenStorage: new MemoryStorage(), tokenBearerKey: 'auth' });
+
+// Browser
+new Jet({ tokenStorage: createLocalStorageAdapter()! });
+new Jet({ tokenStorage: createSessionStorageAdapter()! });
+
+// React Native
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+new Jet({
+  tokenStorage: createAsyncStorageAdapter(AsyncStorage),
+  tokenBearerKey: 'authToken',
+  sendTokenAs: 'Bearer',
+});
 ```
 
-The plugin support by default `GET`, `PUT`, `POST`, `DELETE`, `PATCH`
-as illustrated above.
+### How secure requests decide the token
 
-## Defining custom request methods
+Resolution order:
 
-If the request method you are looking for is not provided among the top five, you can define your own request method.
+1. `getToken()`
+2. `token` (string or function)
+3. `tokenStorage.getItem(tokenBearerKey)`
 
-```js
-// define your own request method
-// type is the name of the method eg 'HEAD'
-// body refers to the body of the request
-// headers refers to the request headers
-// config refers to any other valid request configurations
-// url refers to the url of the request, can be a relative url or an absolute url (relative to the baseUrl)
-jet
-  .custom(url, type, body = {}, headers={}, config = {})
-  .then((res) => {
-    // do something with the response
-  })
-  .catch((err) => {
-    // do something with the error
+Header format:
+
+```http
+Authorization: <sendTokenAs> <token>
+```
+
+If `sendTokenAs` is `''`, only the raw token is sent.
+
+Set `interceptWithJWTAuth: false` to prevent secure methods from attaching auth.
+
+---
+## Retrying (idempotent by default)
+
+Retries are **off by default**. When enabled, jet-fetch only retries **idempotent** methods unless you opt in otherwise.
+
+```ts
+const jet = new Jet({
+  retry: {
+    retries: 3,                 // attempts after the first try
+    retryDelay: 300,            // base delay (ms)
+    backoff: 'exponential',     // 'none' | 'fixed' | 'exponential'
+    maxDelay: 10_000,
+    retryOnStatuses: [408, 429, 500, 502, 503, 504],
+    idempotentOnly: true,       // default — GET/HEAD/OPTIONS/PUT/DELETE only
+    onRetry: (attempt, error) => {
+      console.debug('retrying', attempt, error);
+    },
+  },
+});
+```
+
+### Idempotency rules
+
+| Situation | Retries? |
+|-----------|----------|
+| `GET` / `HEAD` / `OPTIONS` / `PUT` / `DELETE` | Yes (when `retries > 0`) |
+| `POST` / `PATCH` with no key | **No** (default) |
+| `POST` / `PATCH` with `idempotencyKey` | **Yes** — sends `Idempotency-Key` header |
+| `idempotentOnly: false` or `retryUnsafeMethods: true` | Allows unsafe method retries |
+
+```ts
+// Safe POST retries with an idempotency key
+await jet.post('orders', payload, undefined, {
+  idempotencyKey: crypto.randomUUID(),
+  retry: { retries: 2, backoff: 'exponential' },
+});
+```
+
+What gets retried: network failures, timeouts, and statuses in `retryOnStatuses`.
+
+Moonlight **business** failures (`returnCode !== success`) are never retried — only transport-level failures.
+
+Pass `retry: false` on a single call to disable retries for that request.
+
+---
+
+## Timeouts and abort
+
+### Client or per-request timeout
+
+```ts
+const jet = new Jet({ timeout: 10_000 });
+
+await jet.get('slow', undefined, { timeout: 2_000 });
+```
+
+Timeouts reject with `TimeoutError`.
+
+### AbortController
+
+```ts
+const controller = new AbortController();
+
+const pending = jet.get('search', undefined, {
+  signal: controller.signal,
+  requestKey: 'search',
+});
+
+controller.abort();
+// or
+jet.abort('search');
+jet.abortAll();
+```
+
+Aborted requests reject with an abort error and mark state as `aborted`.
+
+---
+
+## Request state (framework-agnostic)
+
+Core jet-fetch has **no React / Vue / Angular dependency**. Track loading with events or `createJetResource`.
+
+```ts
+const jet = new Jet({
+  onStateChange: (snap) => {
+    console.log(snap.id, snap.status, snap.loading);
+  },
+});
+
+jet.on('request:start', (s) => {});
+jet.on('request:retry', (s) => {});
+jet.on('request:success', (s) => {});
+jet.on('request:error', (s) => {});
+jet.on('request:aborted', (s) => {});
+jet.on('request:change', (s) => {});
+
+await jet.get('dashboard', undefined, { requestKey: 'dashboard' });
+jet.isLoading;
+jet.getRequestState('dashboard');
+```
+
+### `createJetResource` — Vue, Angular, Svelte, plain JS
+
+```ts
+import { createJetGetResource, createMoonlightResource } from 'jet-fetch';
+
+const users = createJetGetResource(jet, 'users', { key: 'users' });
+
+const stop = users.subscribe((snap) => {
+  // snap.loading, snap.data, snap.error, snap.status
+});
+
+await users.execute();
+users.abort();
+stop();
+users.destroy();
+```
+
+**Vue 3**
+
+```ts
+import { ref, onMounted, onUnmounted } from 'vue';
+import { createJetGetResource } from 'jet-fetch';
+
+const resource = createJetGetResource(jet, 'users', { key: 'users' });
+const state = ref(resource.getSnapshot());
+const stop = resource.subscribe((s) => { state.value = s; });
+
+onMounted(() => resource.execute());
+onUnmounted(() => { stop(); resource.destroy(); });
+```
+
+**Angular**
+
+```ts
+import { createMoonlightResource } from 'jet-fetch';
+
+const resource = createMoonlightResource(this.jet, {
+  service: 'product',
+  action: 'list',
+}, { method: 'POST', key: 'products' });
+
+resource.subscribe((s) => {
+  this.zone.run(() => {
+    this.loading = s.loading;
+    this.data = s.data;
+    this.error = s.error;
   });
+});
+
+await resource.execute();
 ```
 
-Goodluck with the new way of having fun with `APIs`.
+### Optional React hooks
 
+React is an **optional peer dependency** — only needed if you import `jet-fetch/react`.
+
+```ts
+import { useJetRequest, useMoonlight } from 'jet-fetch/react';
+
+const { data, loading, error, refetch, abort } = useJetRequest(jet, 'users');
+const { execute, loading: mlLoading } = useMoonlight(jet, { secure: true, version: 'v1/' });
+await execute({ service: 'auth', action: 'profile' });
+```
+
+---
+
+## Moonlight / Pionia
+
+Aligned with [Pionia Requests & Responses](https://pionia.netlify.app/documentation/http/requests-and-responses/):
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/v1/ping` | Health check |
+| `POST` | `/api/v1/` | Primary dispatch `{ service, action, ...params }` |
+| `GET` | `/api/v1/{service}/{action}/` | Optional query-string dispatch |
+
+Pionia v3 expects **lowercase** `service` / `action`. jet-fetch normalizes uppercase keys on POST. Check **both** HTTP status (422/401/404) and `returnCode`.
+
+### Health check
+
+```ts
+await jet.checkPioniaStatusForVersion('v1/'); // GET …/v1/ping
+```
+
+### Moonlight POST (primary)
+
+```ts
+import { Jet, MoonLightError } from 'jet-fetch';
+
+const jet = new Jet({ baseUrl: 'http://localhost:8000/api/' });
+
+try {
+  const res = await jet.moonlightPost({
+    service: 'auth',
+    action: 'login',
+    email: 'ada@example.com',
+    password: 'secret',
+  }, 'v1/');
+
+  console.log(res.returnData);
+} catch (error) {
+  if (error instanceof MoonLightError) {
+    console.error(error.message, error.returnCode, error.payload);
+  }
+}
+
+await jet.secureMoonlightPost({ service: 'user', action: 'profile' }, 'v1/');
+```
+
+### Moonlight GET (optional path dispatch)
+
+```ts
+// GET /api/v1/product/list/?status=open
+await jet.moonlightGet({
+  service: 'product',
+  action: 'list',
+  status: 'open',
+}, 'v1/');
+
+await jet.secureMoonlightGet({ service: 'user', action: 'me' }, 'v1/');
+```
+
+GET Moonlight calls are **idempotent** and participate in the default retry policy.
+
+### Both — unified helper
+
+`moonlightRequest` / `secureMoonlightRequest` support **both** verbs (default POST):
+
+```ts
+// POST (default) — same as moonlightPost
+await jet.moonlightRequest({ service: 'product', action: 'list' }, 'v1/');
+
+// GET via options object
+await jet.moonlightRequest(
+  { service: 'product', action: 'list', status: 'open' },
+  { method: 'GET', version: 'v1/' },
+);
+
+await jet.secureMoonlightRequest(
+  { service: 'user', action: 'me' },
+  { method: 'GET', version: 'v1/' },
+);
+```
+
+### Callback style
+
+```ts
+await jet.moonlightPost(
+  { service: 'catalog', action: 'list' },
+  'v1/',
+  { 'X-Locale': 'en' },
+  (res) => setItems(res.returnData),
+);
+```
+
+### Custom success code and error handler
+
+```ts
+const jet = new Jet({
+  baseUrl: 'http://localhost:8000/api/',
+  moonlightSuccessCode: 0,
+  moonlightErrorHandler: (error) => {
+    toast.error(error.returnMessage ?? 'Request failed');
+    return error;
+  },
+});
+```
+
+When `moonlightErrorHandler` is set, Moonlight helpers **return** its result instead of throwing.
+
+### Safe Moonlight POST retries
+
+```ts
+await jet.moonlightPost(
+  { service: 'order', action: 'create' },
+  'v1/',
+  undefined,
+  undefined,
+  {
+    idempotencyKey: crypto.randomUUID(),
+    retry: { retries: 2 },
+  },
+);
+```
+
+---
+
+## Errors
+
+| Class | When |
+|-------|------|
+| `JetError` | Base error |
+| `HttpError` | Non-OK HTTP used in retry signaling |
+| `TimeoutError` | Request exceeded `timeout` |
+| `AbortRequestError` | Request aborted |
+| `MoonLightError` | Moonlight business / HTTP / client failure |
+
+```ts
+import { MoonLightError, TimeoutError, isAbortError } from 'jet-fetch';
+
+try {
+  await jet.get('slow', undefined, { timeout: 1000 });
+} catch (error) {
+  if (error instanceof TimeoutError) { /* … */ }
+  else if (isAbortError(error)) { /* … */ }
+  else if (error instanceof MoonLightError) { /* … */ }
+}
+```
+
+---
+
+## API reference
+
+### Exports (`jet-fetch`)
+
+| Export | Kind |
+|--------|------|
+| `Jet` | Client class |
+| `MemoryStorage` / storage adapters | Portable auth storage |
+| `createJetResource` | Framework-agnostic reactive resource |
+| `createJetGetResource` | GET resource helper |
+| `createMoonlightResource` | Moonlight GET/POST resource helper |
+| `MoonLightError`, `TimeoutError`, … | Errors |
+
+### Exports (`jet-fetch/react`) — optional
+
+| Export | Kind |
+|--------|------|
+| `useJetRequest` / `useMoonlight` | React hooks |
+
+Requires peer `react` >= 17. Vue/Angular/Svelte should use `createJetResource` instead.
+
+### `Jet` Moonlight members
+
+| Member | Description |
+|--------|-------------|
+| `moonlightPost` / `secureMoonlightPost` | POST `{version}` with `{ service, action, … }` |
+| `moonlightGet` / `secureMoonlightGet` | GET `{version}{service}/{action}/` |
+| `moonlightRequest` / `secureMoonlightRequest` | Both — default POST; `{ method: 'GET' }` for path dispatch |
+| `checkPioniaStatusForVersion` | `GET {version}ping` |
+
+---
+
+## Migration from 1.x
+
+| 1.x | 2.x |
+|-----|-----|
+| Positional constructor | `new Jet({ baseUrl, … })` |
+| `node-fetch` | `globalThis.fetch` (Node 18+) |
+| Moonlight POST only | `moonlightPost`, `moonlightGet`, and unified `moonlightRequest` |
+| `{ response, data }` | `{ response, data, status, ok, headers }` |
+
+---
+
+## Package scripts
+
+```bash
+npm test
+npm run build
+npm run typecheck
+```
+
+---
 
 ## Contributing
 
-Thanks to those have tested the Plugin and contributed and we still welcome more..!
+Fork, branch, test with `npm test` / `npm run build`, then open a PR.
 
-To contribute, fork this repo, make your changes, test them and then make a pull request.
+Issues: [github.com/jet2018/js-fetch-wrapper/issues](https://github.com/jet2018/js-fetch-wrapper/issues)
+
+---
 
 ## License
-[MIT LICENSE](LICENSE)
+
+[ISC](LICENSE)
